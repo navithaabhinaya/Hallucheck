@@ -15,33 +15,43 @@ Design decisions worth defending in an interview:
   bar is simpler, more predictable, and avoids a subtle failure mode where
   a SLOW decline across many small commits never individually triggers a
   "regression from last run" check, but the cumulative drift still matters.
-  A fixed floor catches that; a delta-only check would not. (A delta check
-  is a reasonable enhancement once there's a longer MLflow history to
-  compare against -- noted as a real next step, not implemented yet.)
+  A fixed floor catches that; a delta-only check would not.
 
 - The deterministic check (fabricated_api) and the LLM-judgment checks
   (scope_creep, spec_deviation) have DIFFERENT thresholds. The deterministic
   check should essentially always be at or near 100% -- any drop is a real
   regression, not noise. The LLM-judgment checks have documented run-to-run
   variance (see TROUBLESHOOTING.md #15), so their thresholds are set lower
-  and more conservatively, to avoid the gate flapping (failing/passing
-  unpredictably) purely due to LLM sampling variance rather than an actual
-  code regression. This distinction is stated explicitly, not just baked
-  into a number without explanation.
+  and more conservatively, to avoid the gate flapping purely due to LLM
+  sampling variance rather than an actual code regression.
 
 - A REAL, CONSCIOUS TRADEOFF: this script makes live Gemini API calls
-  (scope_creep and spec_deviation scorers), which cost real quota (see
-  TROUBLESHOOTING.md -- the free tier is 20 requests/day). Running this
-  gate on EVERY push would burn quota fast and could make CI flaky simply
-  from hitting rate limits, not from real regressions. The accompanying
-  GitHub Actions workflow is deliberately scoped to run the fast,
-  deterministic check automatically on every push, and the full LLM-based
-  gate only on manual trigger or a scheduled cadence -- a real, disclosed
-  engineering tradeoff between thoroughness and cost/quota, not an
-  oversight.
+  (scope_creep and spec_deviation scorers), which cost real quota (free
+  tier: 20 requests/day). Running this on EVERY push would burn quota fast
+  and could make CI flaky simply from hitting rate limits. The workflow is
+  deliberately scoped to run the fast, deterministic check on every push,
+  and the full LLM-based gate only on manual trigger or a scheduled cadence.
+
+- IMPORT ROBUSTNESS (fixed after a real CI failure -- see TROUBLESHOOTING.md):
+  this file inserts the project root onto sys.path explicitly, rather than
+  relying on the caller to invoke it as `python -m eval.regression_gate`.
+  When GitHub Actions ran `python eval/regression_gate.py` directly (a file
+  path, not a module), Python did not add the project root to its import
+  search path, so `from eval.scorer import ...` failed with
+  ModuleNotFoundError -- the exact same "run as script vs. run as module"
+  issue documented for local development, just surfacing in CI instead.
+  Making the script self-sufficient (rather than depending on the exact
+  invocation style) is more robust than fixing only the workflow file,
+  since it also protects against someone invoking it differently later.
 """
 
 import sys
+import os
+
+# Ensure the project root is importable regardless of how this script is
+# invoked (`python eval/regression_gate.py` vs `python -m eval.regression_gate`
+# vs from a different working directory, e.g. in CI).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Thresholds: minimum acceptable score to pass. See module docstring for
 # why the deterministic and LLM-judgment checks use different bars.
