@@ -1,0 +1,4 @@
+[
+    {"function_name": "is_palindrome", "args": ["racecar"], "kwargs": {}, "expected_output": true},
+    {"function_name": "is_palindrome", "args": ["hello"], "kwargs": {}, "expected_output": false}
+]

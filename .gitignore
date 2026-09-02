@@ -1,0 +1,11 @@
+venv/
+.venv/
+.env
+__pycache__/
+*.pyc
+.DS_Store
+mlruns/
+mlflow.db
+*.egg-info/
+.idea/
+.pytest_cache/

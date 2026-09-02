@@ -1,0 +1,59 @@
+name: HalluCheck Regression Gate
+
+# Deliberately split into two jobs, for a real, disclosed reason:
+# the LLM-based checks (scope_creep, spec_deviation) cost real Gemini API
+# quota (free tier: 20 requests/day -- see TROUBLESHOOTING.md). Running
+# the full LLM-based gate on every single push would burn quota fast and
+# risk CI failures from rate-limiting rather than real regressions.
+#
+# So: the FAST job (deterministic-only, zero API cost) runs on every push
+# and PR automatically. The FULL job (all three checks, real LLM calls)
+# runs only on manual trigger or a weekly schedule -- thorough, but at a
+# controlled, predictable cost.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:      # allows manually triggering the full gate from the Actions tab
+  schedule:
+    - cron: "0 6 * * 1"   # weekly, Monday 6am UTC -- runs the full LLM-based gate
+
+jobs:
+  fast-gate:
+    name: Fast Gate (deterministic checks only, every push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fast regression gate (fabricated-API check only, no API quota used)
+        run: python eval/regression_gate.py
+
+  full-gate:
+    name: Full Gate (all checks, including LLM-based -- manual/scheduled only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full regression gate (all three checks)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python eval/regression_gate.py --full
